@@ -1,0 +1,2 @@
+# Prevent conflicts with Django templates.
+*.html

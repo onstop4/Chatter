@@ -28,3 +28,18 @@ class UserCreationTests(TestCase):
 
         with self.assertRaises(IntegrityError):
             self.user_model.objects.create_user("test", "whatever@example.com", "67890")
+
+
+class UserLoginTests(TestCase):
+    credentials = {
+        "username": "test",
+        "email": "test@example.com",
+        "password": "uQygs8HXqq",
+    }
+
+    def test_login(self):
+        """
+        Tests user login.
+        """
+        response = self.client.post("/login/", self.credentials, follow=True)
+        self.assertEqual(response.status_code, 200)

@@ -1,0 +1,20 @@
+{% extends 'chatter/base.html' %}
+{% load crispy_forms_tags %}
+{% load i18n %}
+
+{% block title %}Login - Chatter{% endblock title %}
+
+{% block content %}
+<div class="small-container">
+  {% if next %}
+  <p>{% blocktranslate %}Please login to see this page.{% endblocktranslate %}</p>
+  {% endif %}
+
+  <form method="post" action="{% url 'login' %}">
+    {% csrf_token %}
+    {{ form|crispy }}
+    <input type="hidden" name="next" value="{{ next }}">
+    <input type="submit" class="btn btn-primary" value="login">
+  </form>
+</div>
+{% endblock content %}
