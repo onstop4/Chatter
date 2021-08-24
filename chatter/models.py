@@ -1,3 +1,5 @@
+import random
+import string
 from django.db import models
 from django.contrib.auth.models import (
     AbstractBaseUser,
@@ -47,3 +49,52 @@ class User(AbstractBaseUser, PermissionsMixin):
     USERNAME_FIELD = "username"
     EMAIL_FIELD = "email"
     REQUIRED_FIELDS = ["email"]
+
+
+def generate_room_number():
+    """
+    Generates a room number composed of 10 digits.
+    """
+    return "".join(random.sample(string.digits, 10))
+
+
+class Room(models.Model):
+    class AccessTypes(models.TextChoices):
+        PUBLIC = "PUBLIC", _("Public")
+        CONFIRMED = "CONFIRMED", _("Confirmed only")
+        PRIVATE = "PRIVATE", _("Private")
+
+    name = models.CharField(_("Room name"), max_length=200)
+    number = models.CharField(_("Room number"), max_length=10, unique=True)
+    owner = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="rooms_owned"
+    )
+    access_type = models.CharField(
+        _("Access type"),
+        max_length=20,
+        default="PUBLIC",
+        choices=AccessTypes.choices,
+        help_text=_(
+            "Public means that users can join even if they are not logged in. "
+            "Confirmed means that only users who are logged in and confirmed can join. "
+            "Private means that only logged in users who you have granted access "
+            "to can join."
+        ),
+    )
+    locked = models.BooleanField(
+        _("Locked"), default=False, help_text=_("Prevents more users from joining.")
+    )
+    password = models.CharField(_("Password"), max_length=200, null=True)
+
+    invited_users = models.ManyToManyField(User, related_name="invited_to")
+    banned_users = models.ManyToManyField(User, related_name="banned_from")
+
+    def save(self, *args, **kwargs):
+        """
+        Ensures that a random room number is generated.
+        """
+        while not self.number:
+            number = generate_room_number()
+            if not Room.objects.filter(number=number):
+                self.number = number
+        super().save(*args, **kwargs)
