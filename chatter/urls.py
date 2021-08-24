@@ -1,9 +1,10 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from django.views.generic import TemplateView
+
+from chatter.views import IndexView, RegisterView
 
 urlpatterns = [
-    path("", TemplateView.as_view(template_name="chatter/index.html"), name="index"),
+    path("", IndexView.as_view(template_name="chatter/index.html"), name="index"),
     path(
         "login/",
         auth_views.LoginView.as_view(
@@ -12,4 +13,5 @@ urlpatterns = [
         name="login",
     ),
     path("logout/", auth_views.LogoutView.as_view(next_page="login"), name="logout"),
+    path("register/", RegisterView.as_view(), name="register"),
 ]

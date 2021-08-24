@@ -1,4 +1,4 @@
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user, get_user_model
 from django.db.utils import IntegrityError
 from django.test import TestCase
 
@@ -43,3 +43,19 @@ class UserLoginTests(TestCase):
         """
         response = self.client.post("/login/", self.credentials, follow=True)
         self.assertEqual(response.status_code, 200)
+
+    def test_register(self):
+        """
+        Tests user registration. Also tests that the user is logged in after
+        registering.
+        """
+        data = {
+            "username": self.credentials["username"],
+            "email": self.credentials["email"],
+            "password1": self.credentials["password"],
+            "password2": self.credentials["password"],
+        }
+        response = self.client.post("/register/", data, follow=True)
+        user = get_user(self.client)
+        self.assertTrue(user.is_authenticated)
+        self.assertContains(response, f"You are now registered, {data['username']}")

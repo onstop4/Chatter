@@ -1,1 +1,9 @@
 {% extends 'chatter/base.html' %}
+{% load i18n %}
+{% block content %}
+{% if new_user %}
+<div class="alert alert-primary mt-3" role="alert">
+    {% blocktranslate with username=user.username %}You are now registered, {{ username }}.{% endblocktranslate %}
+  </div>
+{% endif %}
+{% endblock content %}
