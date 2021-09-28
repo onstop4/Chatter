@@ -1,5 +1,8 @@
+from __future__ import annotations
+from enum import Enum
 import random
 import string
+from typing import Union
 from django.db import models
 from django.contrib.auth.models import (
     AbstractBaseUser,
@@ -7,6 +10,8 @@ from django.contrib.auth.models import (
     PermissionsMixin,
 )
 from django.contrib.auth.validators import UnicodeUsernameValidator
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_unicode_slug
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -58,7 +63,57 @@ def generate_room_number():
     return "".join(random.sample(string.digits, 10))
 
 
+class RoomAccessStatus(Enum):
+    """
+    Represents different statuses indicating if a user can/cannot join a room and why.
+    """
+
+    ALLOWED = "allowed"
+
+    NOT_FOUND = "not found"
+    BAD_USERNAME = "bad username"
+    CONFIRM_REQUIRED = "confirm required"
+    NOT_INVITED = "not invited"
+    BANNED = "banned"
+
+
+class RoomManager(models.Manager):
+    def get_access_status(
+        self, room_number, user, username
+    ) -> tuple[Union[Room, None], RoomAccessStatus]:
+        """
+        Attempts to find the specified room and determines if user is allowed to access
+        it. Will return tuple containing the Room instance (or None) and a
+        RoomAccessStatus instance.
+        """
+        try:
+            room = self.prefetch_related("banned_users", "invited_users").get(
+                number=room_number
+            )
+            if not user.is_authenticated:
+                validate_unicode_slug(username)
+            if (
+                room.access_type == Room.AccessTypes.CONFIRMED
+                and not user.is_authenticated
+            ):
+                return (room, RoomAccessStatus.CONFIRM_REQUIRED)
+            if room.banned_users.filter(username=username).exists():
+                return (room, RoomAccessStatus.BANNED)
+            if (
+                room.access_type == Room.AccessTypes.PRIVATE
+                and not room.invited_users.filter(username=username).exists()
+            ):
+                return (room, RoomAccessStatus.NOT_INVITED)
+        except Room.DoesNotExist:
+            return (None, RoomAccessStatus.NOT_FOUND)
+        except ValidationError:
+            return (room, RoomAccessStatus.BAD_USERNAME)
+        return (room, RoomAccessStatus.ALLOWED)
+
+
 class Room(models.Model):
+    objects = RoomManager()
+
     class AccessTypes(models.TextChoices):
         PUBLIC = "PUBLIC", _("Public")
         CONFIRMED = "CONFIRMED", _("Confirmed only")
