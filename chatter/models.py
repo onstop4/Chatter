@@ -153,3 +153,15 @@ class Room(models.Model):
             if not Room.objects.filter(number=number):
                 self.number = number
         super().save(*args, **kwargs)
+
+
+class RoomParticipant(models.Model):
+    room = models.ForeignKey(
+        Room, on_delete=models.CASCADE, related_name="participants"
+    )
+    username = models.CharField(_("Username"), max_length=30)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("room", "username"), name="room_username")
+        ]

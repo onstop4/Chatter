@@ -327,3 +327,173 @@ class ChatConsumerTests(TransactionTestCase):
 
         connected = (await communicator2.connect())[0]
         self.assertFalse(connected)
+
+    async def test_join_already_in_room(self):
+        """
+        Tests that a user cannot join a room that they are already a participant in.
+        Also tests that a guest user cannot join a room with the same username as
+        another guest participant.
+        """
+        # Connect as self.allowed_user.
+        communicator = WebsocketCommunicator(
+            application, self.public_room_websocket_url
+        )
+        communicator.scope["user"] = self.allowed_user
+
+        connected = (await communicator.connect())[0]
+        self.assertTrue(connected)
+
+        response = await communicator.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {
+                "update": "join status",
+                "status": "allowed",
+                "joined as": self.allowed_user.username,
+            },
+            response,
+        )
+
+        # Attempt to join while original connection is still active.
+        communicator2 = WebsocketCommunicator(
+            application, self.public_room_websocket_url
+        )
+        communicator2.scope["user"] = self.allowed_user
+
+        connected = (await communicator2.connect())[0]
+        self.assertTrue(connected)
+
+        response = await communicator2.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {"update": "join status", "status": "already in room"},
+            response,
+        )
+
+        connected = (await communicator2.connect())[0]
+        self.assertFalse(connected)
+
+        # Ensure that original connection is still active.
+        connected = (await communicator.connect())[0]
+        self.assertTrue(connected)
+
+        # Connect as anonymous user.
+        communicator3 = WebsocketCommunicator(
+            application, f"{self.public_room_websocket_url}?guest=test"
+        )
+
+        connected = (await communicator3.connect())[0]
+        self.assertTrue(connected)
+
+        response = await communicator3.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {
+                "update": "join status",
+                "status": "allowed",
+                "joined as": "guest_test",
+            },
+            response,
+        )
+
+        # Attempt to join while original connection is still active.
+        communicator4 = WebsocketCommunicator(
+            application, f"{self.public_room_websocket_url}?guest=test"
+        )
+
+        connected = (await communicator4.connect())[0]
+        self.assertTrue(connected)
+
+        response = await communicator4.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {"update": "join status", "status": "already in room"},
+            response,
+        )
+
+        connected = (await communicator4.connect())[0]
+        self.assertFalse(connected)
+
+        # Ensure that original connection is still active.
+        connected = (await communicator3.connect())[0]
+        self.assertTrue(connected)
+
+    async def test_rejoin_after_disconnect(self):
+        """
+        Tests that a user can rejoin a room after disconnecting. Also
+        tests that a guest user can rejoin a room after disconnecting,
+        assuming no one else joined using the same guest username.
+        """
+        # Connect as self.allowed_user.
+        communicator = WebsocketCommunicator(
+            application, self.public_room_websocket_url
+        )
+        communicator.scope["user"] = self.allowed_user
+
+        connected = (await communicator.connect())[0]
+        self.assertTrue(connected)
+
+        response = await communicator.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {
+                "update": "join status",
+                "status": "allowed",
+                "joined as": self.allowed_user.username,
+            },
+            response,
+        )
+
+        await communicator.disconnect()
+
+        # Rejoin.
+        communicator2 = WebsocketCommunicator(
+            application, self.public_room_websocket_url
+        )
+        communicator2.scope["user"] = self.allowed_user
+
+        connected = (await communicator2.connect())[0]
+        self.assertTrue(connected)
+
+        response = await communicator2.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {
+                "update": "join status",
+                "status": "allowed",
+                "joined as": self.allowed_user.username,
+            },
+            response,
+        )
+
+        # Connect as anonymous user.
+        communicator3 = WebsocketCommunicator(
+            application, f"{self.public_room_websocket_url}?guest=test"
+        )
+
+        connected = (await communicator3.connect())[0]
+        self.assertTrue(connected)
+
+        response = await communicator3.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {
+                "update": "join status",
+                "status": "allowed",
+                "joined as": "guest_test",
+            },
+            response,
+        )
+
+        await communicator3.disconnect()
+
+        # Rejoin.
+        communicator4 = WebsocketCommunicator(
+            application, f"{self.public_room_websocket_url}?guest=test"
+        )
+
+        connected = (await communicator4.connect())[0]
+        self.assertTrue(connected)
+
+        response = await communicator4.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {
+                "update": "join status",
+                "status": "allowed",
+                "joined as": "guest_test",
+            },
+            response,
+        )
