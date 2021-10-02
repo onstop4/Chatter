@@ -1,5 +1,5 @@
 from __future__ import annotations
-from enum import Enum
+from enum import IntEnum
 import random
 import string
 from typing import Union
@@ -63,18 +63,21 @@ def generate_room_number():
     return "".join(random.sample(string.digits, 10))
 
 
-class RoomAccessStatus(Enum):
+class RoomAccessStatus(IntEnum):
     """
     Represents different statuses indicating if a user can/cannot join a room and why.
     """
 
-    ALLOWED = "allowed"
+    # ALLOWED value will never be sent to user, but just serves as a indicator that
+    # user is allowed to join room.
+    ALLOWED = 4000
 
-    NOT_FOUND = "not found"
-    BAD_USERNAME = "bad username"
-    CONFIRM_REQUIRED = "confirm required"
-    NOT_INVITED = "not invited"
-    BANNED = "banned"
+    NOT_FOUND = 4001
+    BAD_USERNAME = 4002
+    CONFIRM_REQUIRED = 4003
+    NOT_INVITED = 4004
+    BANNED = 4005
+    ALREADY_JOINED = 4006
 
 
 class RoomManager(models.Manager):

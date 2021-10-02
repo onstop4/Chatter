@@ -81,8 +81,7 @@ class ChatConsumerTests(TransactionTestCase):
         response = await communicator.receive_json_from(TIMEOUT)
         self.assertEqual(
             {
-                "update": "join status",
-                "status": "allowed",
+                "update": "joined successfully",
                 "joined as": self.allowed_user.username,
             },
             response,
@@ -98,7 +97,7 @@ class ChatConsumerTests(TransactionTestCase):
 
         response = await communicator2.receive_json_from(TIMEOUT)
         self.assertEqual(
-            {"update": "join status", "status": "allowed", "joined as": "guest_test"},
+            {"update": "joined successfully", "joined as": "guest_test"},
             response,
         )
 
@@ -117,8 +116,7 @@ class ChatConsumerTests(TransactionTestCase):
         response = await communicator.receive_json_from(TIMEOUT)
         self.assertEqual(
             {
-                "update": "join status",
-                "status": "allowed",
+                "update": "joined successfully",
                 "joined as": self.allowed_user.username,
             },
             response,
@@ -139,8 +137,7 @@ class ChatConsumerTests(TransactionTestCase):
         response = await communicator.receive_json_from(TIMEOUT)
         self.assertEqual(
             {
-                "update": "join status",
-                "status": "allowed",
+                "update": "joined successfully",
                 "joined as": self.allowed_user.username,
             },
             response,
@@ -155,26 +152,16 @@ class ChatConsumerTests(TransactionTestCase):
         communicator = WebsocketCommunicator(application, "/ws/chat/54321/")
         communicator.scope["user"] = self.allowed_user
 
-        connected = (await communicator.connect())[0]
-        self.assertTrue(connected)
-
-        response = await communicator.receive_json_from(TIMEOUT)
-        self.assertEqual({"update": "join status", "status": "not found"}, response)
-
-        connected = (await communicator.connect())[0]
+        connected, code = await communicator.connect()
         self.assertFalse(connected)
+        self.assertEqual(4001, code)
 
         # Connect as anonymous user.
         communicator2 = WebsocketCommunicator(application, "/ws/chat/54321/")
 
-        connected = (await communicator2.connect())[0]
-        self.assertTrue(connected)
-
-        response = await communicator2.receive_json_from(TIMEOUT)
-        self.assertEqual({"update": "join status", "status": "not found"}, response)
-
-        connected = (await communicator2.connect())[0]
+        connected, code = await communicator2.connect()
         self.assertFalse(connected)
+        self.assertEqual(4001, code)
 
     async def test_join_bad_username(self):
         """
@@ -186,56 +173,36 @@ class ChatConsumerTests(TransactionTestCase):
             application, f"{self.public_room_websocket_url}?guest=%20"
         )
 
-        connected = (await communicator.connect())[0]
-        self.assertTrue(connected)
-
-        response = await communicator.receive_json_from(TIMEOUT)
-        self.assertEqual({"update": "join status", "status": "bad username"}, response)
-
-        connected = (await communicator.connect())[0]
+        connected, code = await communicator.connect()
         self.assertFalse(connected)
+        self.assertEqual(4002, code)
 
         # Username specified is blank.
         communicator2 = WebsocketCommunicator(
             application, f"{self.public_room_websocket_url}?guest="
         )
 
-        connected = (await communicator2.connect())[0]
-        self.assertTrue(connected)
-
-        response = await communicator2.receive_json_from(TIMEOUT)
-        self.assertEqual({"update": "join status", "status": "bad username"}, response)
-
-        connected = (await communicator2.connect())[0]
+        connected, code = await communicator2.connect()
         self.assertFalse(connected)
+        self.assertEqual(4002, code)
 
         # Username specified includes space character.
         communicator3 = WebsocketCommunicator(
             application, f"{self.public_room_websocket_url}?guest=test%20bad"
         )
 
-        connected = (await communicator3.connect())[0]
-        self.assertTrue(connected)
-
-        response = await communicator3.receive_json_from(TIMEOUT)
-        self.assertEqual({"update": "join status", "status": "bad username"}, response)
-
-        connected = (await communicator3.connect())[0]
+        connected, code = await communicator3.connect()
         self.assertFalse(connected)
+        self.assertEqual(4002, code)
 
         # No username is specified.
         communicator4 = WebsocketCommunicator(
             application, self.public_room_websocket_url
         )
 
-        connected = (await communicator4.connect())[0]
-        self.assertTrue(connected)
-
-        response = await communicator4.receive_json_from(TIMEOUT)
-        self.assertEqual({"update": "join status", "status": "bad username"}, response)
-
-        connected = (await communicator4.connect())[0]
+        connected, code = await communicator4.connect()
         self.assertFalse(connected)
+        self.assertEqual(4002, code)
 
     async def test_join_confirm_required(self):
         """
@@ -246,16 +213,9 @@ class ChatConsumerTests(TransactionTestCase):
             application, f"{self.confirmed_room_websocket_url}?guest=test"
         )
 
-        connected = (await communicator.connect())[0]
-        self.assertTrue(connected)
-
-        response = await communicator.receive_json_from(TIMEOUT)
-        self.assertEqual(
-            {"update": "join status", "status": "confirm required"}, response
-        )
-
-        connected = (await communicator.connect())[0]
+        connected, code = await communicator.connect()
         self.assertFalse(connected)
+        self.assertEqual(4003, code)
 
     async def test_join_not_invited(self):
         """
@@ -270,28 +230,18 @@ class ChatConsumerTests(TransactionTestCase):
         )
         communicator.scope["user"] = self.bad_user
 
-        connected = (await communicator.connect())[0]
-        self.assertTrue(connected)
-
-        response = await communicator.receive_json_from(TIMEOUT)
-        self.assertEqual({"update": "join status", "status": "not invited"}, response)
-
-        connected = (await communicator.connect())[0]
+        connected, code = await communicator.connect()
         self.assertFalse(connected)
+        self.assertEqual(4004, code)
 
         # Connect as anonymous user.
         communicator2 = WebsocketCommunicator(
             application, f"{self.private_room_websocket_url}?guest=test"
         )
 
-        connected = (await communicator2.connect())[0]
-        self.assertTrue(connected)
-
-        response = await communicator2.receive_json_from(TIMEOUT)
-        self.assertEqual({"update": "join status", "status": "not invited"}, response)
-
-        connected = (await communicator2.connect())[0]
+        connected, code = await communicator2.connect()
         self.assertFalse(connected)
+        self.assertEqual(4004, code)
 
     async def test_join_banned(self):
         """
@@ -304,14 +254,9 @@ class ChatConsumerTests(TransactionTestCase):
         )
         communicator.scope["user"] = self.bad_user
 
-        connected = (await communicator.connect())[0]
-        self.assertTrue(connected)
-
-        response = await communicator.receive_json_from(TIMEOUT)
-        self.assertEqual({"update": "join status", "status": "banned"}, response)
-
-        connected = (await communicator.connect())[0]
+        connected, code = await communicator.connect()
         self.assertFalse(connected)
+        self.assertEqual(4005, code)
 
         # Attempting to join confirmed room.
         communicator2 = WebsocketCommunicator(
@@ -319,14 +264,9 @@ class ChatConsumerTests(TransactionTestCase):
         )
         communicator2.scope["user"] = self.bad_user
 
-        connected = (await communicator2.connect())[0]
-        self.assertTrue(connected)
-
-        response = await communicator2.receive_json_from(TIMEOUT)
-        self.assertEqual({"update": "join status", "status": "banned"}, response)
-
-        connected = (await communicator2.connect())[0]
+        connected, code = await communicator2.connect()
         self.assertFalse(connected)
+        self.assertEqual(4005, code)
 
     async def test_join_already_in_room(self):
         """
@@ -346,8 +286,7 @@ class ChatConsumerTests(TransactionTestCase):
         response = await communicator.receive_json_from(TIMEOUT)
         self.assertEqual(
             {
-                "update": "join status",
-                "status": "allowed",
+                "update": "joined successfully",
                 "joined as": self.allowed_user.username,
             },
             response,
@@ -359,21 +298,9 @@ class ChatConsumerTests(TransactionTestCase):
         )
         communicator2.scope["user"] = self.allowed_user
 
-        connected = (await communicator2.connect())[0]
-        self.assertTrue(connected)
-
-        response = await communicator2.receive_json_from(TIMEOUT)
-        self.assertEqual(
-            {"update": "join status", "status": "already in room"},
-            response,
-        )
-
-        connected = (await communicator2.connect())[0]
+        connected, code = await communicator2.connect()
         self.assertFalse(connected)
-
-        # Ensure that original connection is still active.
-        connected = (await communicator.connect())[0]
-        self.assertTrue(connected)
+        self.assertEqual(4006, code)
 
         # Connect as anonymous user.
         communicator3 = WebsocketCommunicator(
@@ -386,8 +313,7 @@ class ChatConsumerTests(TransactionTestCase):
         response = await communicator3.receive_json_from(TIMEOUT)
         self.assertEqual(
             {
-                "update": "join status",
-                "status": "allowed",
+                "update": "joined successfully",
                 "joined as": "guest_test",
             },
             response,
@@ -398,21 +324,9 @@ class ChatConsumerTests(TransactionTestCase):
             application, f"{self.public_room_websocket_url}?guest=test"
         )
 
-        connected = (await communicator4.connect())[0]
-        self.assertTrue(connected)
-
-        response = await communicator4.receive_json_from(TIMEOUT)
-        self.assertEqual(
-            {"update": "join status", "status": "already in room"},
-            response,
-        )
-
-        connected = (await communicator4.connect())[0]
+        connected, code = await communicator4.connect()
         self.assertFalse(connected)
-
-        # Ensure that original connection is still active.
-        connected = (await communicator3.connect())[0]
-        self.assertTrue(connected)
+        self.assertEqual(4006, code)
 
     async def test_rejoin_after_disconnect(self):
         """
@@ -432,8 +346,7 @@ class ChatConsumerTests(TransactionTestCase):
         response = await communicator.receive_json_from(TIMEOUT)
         self.assertEqual(
             {
-                "update": "join status",
-                "status": "allowed",
+                "update": "joined successfully",
                 "joined as": self.allowed_user.username,
             },
             response,
@@ -453,8 +366,7 @@ class ChatConsumerTests(TransactionTestCase):
         response = await communicator2.receive_json_from(TIMEOUT)
         self.assertEqual(
             {
-                "update": "join status",
-                "status": "allowed",
+                "update": "joined successfully",
                 "joined as": self.allowed_user.username,
             },
             response,
@@ -471,8 +383,7 @@ class ChatConsumerTests(TransactionTestCase):
         response = await communicator3.receive_json_from(TIMEOUT)
         self.assertEqual(
             {
-                "update": "join status",
-                "status": "allowed",
+                "update": "joined successfully",
                 "joined as": "guest_test",
             },
             response,
@@ -491,8 +402,7 @@ class ChatConsumerTests(TransactionTestCase):
         response = await communicator4.receive_json_from(TIMEOUT)
         self.assertEqual(
             {
-                "update": "join status",
-                "status": "allowed",
+                "update": "joined successfully",
                 "joined as": "guest_test",
             },
             response,

@@ -70,16 +70,16 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             if self.user.is_authenticated
             else extract_username(self.scope["query_string"])
         )
-        await self.accept()
+
         self.room, access_status = await get_access_status(
             self.room_number, self.user, self.username
         )
         if access_status == RoomAccessStatus.ALLOWED:
             if await add_participant(self.room, self.username):
+                await self.accept()
                 await self.send_json(
                     {
-                        "update": "join status",
-                        "status": access_status.value,
+                        "update": "joined successfully",
                         "joined as": self.username,
                     }
                 )
@@ -87,13 +87,9 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                     self.room_group_name, self.channel_name
                 )
             else:
-                await self.send_json(
-                    {"update": "join status", "status": "already in room"}, True
-                )
+                await self.close(RoomAccessStatus.ALREADY_JOINED.value)
         else:
-            await self.send_json(
-                {"update": "join status", "status": access_status.value}, True
-            )
+            await self.close(access_status.value)
 
     async def disconnect(self, code):
         """
