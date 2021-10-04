@@ -15,9 +15,9 @@ application = ProtocolTypeRouter(
 TIMEOUT = 2
 
 
-class ChatConsumerTests(TransactionTestCase):
+class ChatroomConnectionTests(TransactionTestCase):
     """
-    Performs tests related to ChatConsumer.
+    Performs tests related to connecting and joining chat rooms.
     """
 
     def setUp(self):
@@ -407,3 +407,40 @@ class ChatConsumerTests(TransactionTestCase):
             },
             response,
         )
+
+
+class ChatroomActionTests(TransactionTestCase):
+    """
+    Performs tests related to requesting actions from server.
+    """
+
+    def setUp(self):
+        """
+        Sets up environment for tests. Creates two users (one room owner and one normal
+        user). A public room is also created.
+        """
+        self.owner = User.objects.create_user("owner", "owner@example.com", "12345")
+
+        self.user = User.objects.create_user("user", "user@example.com", "12345")
+
+        self.room = Room.objects.create(
+            name="Room", number="1234567890", owner=self.owner
+        )
+        self.room_websocket_url = f"/ws/chat/{self.room.number}/"
+
+    async def test_get_participants(self):
+        """
+        Tests getting room participants.
+        """
+        owner_communicator = WebsocketCommunicator(application, self.room_websocket_url)
+        owner_communicator.scope["user"] = self.owner
+        await owner_communicator.connect()
+
+        user_communicator = WebsocketCommunicator(application, self.room_websocket_url)
+        user_communicator.scope["user"] = self.user
+        await user_communicator.connect()
+        await user_communicator.receive_json_from(TIMEOUT)
+
+        await user_communicator.send_json_to({"action": "get participants"})
+        participants = await user_communicator.receive_json_from(TIMEOUT)
+        self.assertListEqual(["owner", "user"], participants)

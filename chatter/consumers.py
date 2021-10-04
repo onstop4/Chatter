@@ -48,6 +48,16 @@ def remove_participant(room: Room, username: str) -> bool:
     )
 
 
+@database_sync_to_async
+def get_participants(room: Room) -> list[str]:
+    """
+    Returns list of room participants.
+    """
+    return list(
+        room.participants.values_list("username", flat=True).order_by("username")
+    )
+
+
 class ChatConsumer(AsyncJsonWebsocketConsumer):
     """
     Handles chatroom communication.
@@ -98,3 +108,12 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         """
         await remove_participant(self.room, self.username)
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+
+    async def receive_json(self, content, **kwargs):
+        """
+        Performs actions as requested by the action key of the incoming JSON.
+        """
+        action = content.get("action")
+
+        if action == "get participants":
+            await self.send_json(await get_participants(self.room))
