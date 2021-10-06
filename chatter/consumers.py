@@ -117,3 +117,25 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
 
         if action == "get participants":
             await self.send_json(await get_participants(self.room))
+        elif action == "send message":
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    "type": "chat_message",
+                    "message": content.get("message", ""),
+                    "username": self.username,
+                },
+            )
+
+    async def chat_message(self, event):
+        """
+        Receives new chat message from room group and sends it to client (along with
+        the username associated with the message).
+        """
+        await self.send_json(
+            {
+                "update": "new message",
+                "message": event["message"],
+                "username": event["username"],
+            }
+        )

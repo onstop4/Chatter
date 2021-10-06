@@ -432,10 +432,12 @@ class ChatroomActionTests(TransactionTestCase):
         """
         Tests getting room participants.
         """
+        # Connect owner as room participant.
         owner_communicator = WebsocketCommunicator(application, self.room_websocket_url)
         owner_communicator.scope["user"] = self.owner
         await owner_communicator.connect()
 
+        # Connect normal user as room participant.
         user_communicator = WebsocketCommunicator(application, self.room_websocket_url)
         user_communicator.scope["user"] = self.user
         await user_communicator.connect()
@@ -444,3 +446,38 @@ class ChatroomActionTests(TransactionTestCase):
         await user_communicator.send_json_to({"action": "get participants"})
         participants = await user_communicator.receive_json_from(TIMEOUT)
         self.assertListEqual(["owner", "user"], participants)
+
+    async def test_send_new_messages(self):
+        """
+        Tests that all room participants will receive a chat message sent by one
+        participant.
+        """
+        expected_response = {
+            "update": "new message",
+            "message": "Test message.",
+            "username": self.user.username,
+        }
+
+        # Connect owner as room participant.
+        owner_communicator = WebsocketCommunicator(application, self.room_websocket_url)
+        owner_communicator.scope["user"] = self.owner
+        await owner_communicator.connect()
+        await owner_communicator.receive_json_from(TIMEOUT)
+
+        # Connect normal user as room participant.
+        user_communicator = WebsocketCommunicator(application, self.room_websocket_url)
+        user_communicator.scope["user"] = self.user
+        await user_communicator.connect()
+        await user_communicator.receive_json_from(TIMEOUT)
+
+        # Normal user sends message.
+        await user_communicator.send_json_to(
+            {"action": "send message", "message": "Test message."}
+        )
+        # Normal user receives update concerning new message.
+        response = await user_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual(expected_response, response)
+
+        # Owner receives update concerning new message.
+        response = await owner_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual(expected_response, response)
