@@ -149,7 +149,8 @@ class Room(models.Model):
 
     def save(self, *args, **kwargs):
         """
-        Ensures that a random room number is generated.
+        Saves Room object. Ensures that a random room number is generated if it doesn't
+        exist.
         """
         while not self.number:
             number = generate_room_number()

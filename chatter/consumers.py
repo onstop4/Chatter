@@ -3,10 +3,10 @@ from urllib.parse import parse_qs, unquote
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
-from chatter.models import Room, RoomAccessStatus, RoomParticipant
+from chatter.models import Room, RoomAccessStatus, RoomParticipant, User
 
 
-def extract_username(query_string):
+def extract_username(query_string: str) -> str:
     try:
         found_username = parse_qs(unquote(query_string)).get("guest")[0]
         return f"guest_{found_username}" if found_username else ""
@@ -15,8 +15,13 @@ def extract_username(query_string):
 
 
 @database_sync_to_async
-def get_access_status(room_number, user, username):
+def get_access_status(room_number: str, user: User, username: str) -> RoomAccessStatus:
     return Room.objects.get_access_status(room_number, user, username)
+
+
+@database_sync_to_async
+def is_owner(room: Room, user: User):
+    return room.owner == user
 
 
 @database_sync_to_async
@@ -46,6 +51,16 @@ def remove_participant(room: Room, username: str) -> bool:
     return bool(
         RoomParticipant.objects.filter(room=room.id, username=username).delete()[0]
     )
+
+
+@database_sync_to_async
+def ban_user(room: Room, user: User):
+    """
+    Add user to room's set of banned users.
+    """
+    if user.is_authenticated:
+        room.banned_users.add(user)
+        room.save()
 
 
 @database_sync_to_async
@@ -80,12 +95,12 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             if self.user.is_authenticated
             else extract_username(self.scope["query_string"])
         )
-
         self.room, access_status = await get_access_status(
             self.room_number, self.user, self.username
         )
         if access_status == RoomAccessStatus.ALLOWED:
             if await add_participant(self.room, self.username):
+                self.is_owner = await is_owner(self.room, self.user)
                 await self.accept()
                 await self.send_json(
                     {
@@ -105,9 +120,12 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         """
         Removes channel from group and records that user is no longer participant in
         room.
+
+        This method might have to be called manually due to this bug:
+        https://github.com/django/channels/issues/1466
         """
-        await remove_participant(self.room, self.username)
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+        await remove_participant(self.room, self.username)
 
     async def receive_json(self, content, **kwargs):
         """
@@ -126,6 +144,24 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                     "username": self.username,
                 },
             )
+        elif action == "kick user":
+            username_to_kick = content.get("username")
+            if self.is_owner and username_to_kick:
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {"type": "chat_kick", "username": username_to_kick},
+                )
+        elif action == "ban user":
+            username_to_ban = content.get("username")
+            if (
+                self.is_owner
+                and username_to_ban
+                and not username_to_ban.startswith("guest_")
+            ):
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {"type": "chat_ban", "username": username_to_ban},
+                )
 
     async def chat_message(self, event):
         """
@@ -139,3 +175,32 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                 "username": event["username"],
             }
         )
+
+    async def chat_kick(self, event):
+        """
+        Receives event to kick a specific user. If said user is associated with client,
+        alert client of this, close the connection, and remove user as participant. If
+        not, just alert client that another user was kicked.
+        """
+        if event["username"] == self.username:
+            await self.disconnect(None)
+            await self.send_json({"update": "kicked you"}, True)
+        else:
+            await self.send_json(
+                {"update": "user kicked", "username": event["username"]}
+            )
+
+    async def chat_ban(self, event):
+        """
+        Receives event to ban a specific user. If said user is associated with client,
+        then ban said user, alert client of this, close the connection, and remove user
+        as participant. If not, just alert client that another user was banned.
+        """
+        if event["username"] == self.username:
+            await ban_user(self.room, self.user)
+            await self.disconnect(None)
+            await self.send_json({"update": "banned you"}, True)
+        else:
+            await self.send_json(
+                {"update": "user banned", "username": event["username"]}
+            )

@@ -481,3 +481,137 @@ class ChatroomActionTests(TransactionTestCase):
         # Owner receives update concerning new message.
         response = await owner_communicator.receive_json_from(TIMEOUT)
         self.assertEqual(expected_response, response)
+
+    async def test_kick_user(self):
+        """
+        Tests that a room participant can be kicked by room owner.
+        """
+        # Connect owner as room participant.
+        owner_communicator = WebsocketCommunicator(application, self.room_websocket_url)
+        owner_communicator.scope["user"] = self.owner
+        await owner_communicator.connect()
+        await owner_communicator.receive_json_from(TIMEOUT)
+
+        # Connect normal user as room participant.
+        user_communicator = WebsocketCommunicator(application, self.room_websocket_url)
+        user_communicator.scope["user"] = self.user
+        await user_communicator.connect()
+        await user_communicator.receive_json_from(TIMEOUT)
+
+        # Owner requests that normal user is kicked.
+        await owner_communicator.send_json_to(
+            {"action": "kick user", "username": self.user.username}
+        )
+
+        # Normal user is kicked.
+        response = await user_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual({"update": "kicked you"}, response)
+
+        # Owner is alerted that normal user has been kicked.
+        response = await owner_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {"update": "user kicked", "username": self.user.username}, response
+        )
+
+        # Normal user rejoins.
+        user_communicator2 = WebsocketCommunicator(application, self.room_websocket_url)
+        user_communicator2.scope["user"] = self.user
+        await user_communicator2.connect()
+        response = await user_communicator2.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {
+                "update": "joined successfully",
+                "joined as": self.user.username,
+            },
+            response,
+        )
+
+        # Connect anonymous user as room participant.
+        guest_communicator = WebsocketCommunicator(
+            application, f"{self.room_websocket_url}?guest=test"
+        )
+        await guest_communicator.connect()
+        await guest_communicator.receive_json_from(TIMEOUT)
+
+        # Owner requests that anonymous user is kicked.
+        await owner_communicator.send_json_to(
+            {"action": "kick user", "username": "guest_test"}
+        )
+
+        # Anonymous user is kicked.
+        response = await guest_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual({"update": "kicked you"}, response)
+
+        # Owner is alerted that anonymous user has been kicked.
+        response = await owner_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual({"update": "user kicked", "username": "guest_test"}, response)
+
+        # Anonymous user rejoins.
+        guest_communicator2 = WebsocketCommunicator(
+            application, f"{self.room_websocket_url}?guest=test"
+        )
+        await guest_communicator2.connect()
+        response = await guest_communicator2.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {
+                "update": "joined successfully",
+                "joined as": "guest_test",
+            },
+            response,
+        )
+
+    async def test_ban_user(self):
+        """
+        Tests that a room participant can be banned by room owner. Also tests that this
+        does not apply to guest users.
+        """
+        # Connect owner as room participant.
+        owner_communicator = WebsocketCommunicator(application, self.room_websocket_url)
+        owner_communicator.scope["user"] = self.owner
+        await owner_communicator.connect()
+        await owner_communicator.receive_json_from(TIMEOUT)
+
+        # Connect normal user as room participant.
+        user_communicator = WebsocketCommunicator(application, self.room_websocket_url)
+        user_communicator.scope["user"] = self.user
+        await user_communicator.connect()
+        await user_communicator.receive_json_from(TIMEOUT)
+
+        # Owner requests that normal user is banned.
+        await owner_communicator.send_json_to(
+            {"action": "ban user", "username": self.user.username}
+        )
+
+        # Normal user is banned.
+        response = await user_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual({"update": "banned you"}, response)
+
+        # Owner is alerted that normal user has been banned.
+        response = await owner_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {"update": "user banned", "username": self.user.username}, response
+        )
+
+        # Normal user cannot rejoin.
+        user_communicator2 = WebsocketCommunicator(application, self.room_websocket_url)
+        user_communicator2.scope["user"] = self.user
+        connected, code = await user_communicator2.connect()
+        self.assertFalse(connected)
+        self.assertEqual(4005, code)
+
+        # Connect anonymous user as room participant.
+        guest_communicator = WebsocketCommunicator(
+            application, f"{self.room_websocket_url}?guest=test"
+        )
+        await guest_communicator.connect()
+        await guest_communicator.receive_json_from(TIMEOUT)
+
+        # Owner requests that anonymous user is banned. Request will be ignored.
+        await owner_communicator.send_json_to(
+            {"action": "ban user", "username": "guest_test"}
+        )
+
+        # Anonymous user is still connected.
+        await guest_communicator.send_json_to({"action": "get participants"})
+        response = await guest_communicator.receive_json_from(TIMEOUT)
+        self.assertListEqual(["guest_test", "owner"], response)
