@@ -1,3 +1,4 @@
+from typing import Optional
 from urllib.parse import parse_qs, unquote
 
 from channels.db import database_sync_to_async
@@ -7,6 +8,10 @@ from chatter.models import Room, RoomAccessStatus, RoomParticipant, User
 
 
 def extract_username(query_string: str) -> str:
+    """
+    Extracts username from query string (which would be used by an anonymous user to
+    join with a specific username). Will return 'guest_' + the extracted username.
+    """
     try:
         found_username = parse_qs(unquote(query_string)).get("guest")[0]
         return f"guest_{found_username}" if found_username else ""
@@ -16,11 +21,19 @@ def extract_username(query_string: str) -> str:
 
 @database_sync_to_async
 def get_access_status(room_number: str, user: User, username: str) -> RoomAccessStatus:
+    """
+    Returns a :py:class:`RoomAccessStatus` instance determining whether or not a user
+    is allowed to join a room associated with a specific room number (if such a room
+    exists).
+    """
     return Room.objects.get_access_status(room_number, user, username)
 
 
 @database_sync_to_async
-def is_owner(room: Room, user: User):
+def is_owner(room: Room, user: User) -> bool:
+    """
+    Returns whether or not a user is the owner of a room.
+    """
     return room.owner == user
 
 
@@ -42,7 +55,7 @@ def add_participant(room: Room, username: str) -> bool:
 @database_sync_to_async
 def remove_participant(room: Room, username: str) -> bool:
     """
-    Rempves any record of partipant associated with specific Room. Does this by
+    Removes any record of partipant associated with specific room. Does this by
     deleting objects from RoomParticipant and returning whether or not anything was
     deleted.
     """
@@ -64,6 +77,32 @@ def ban_user(room: Room, user: User):
 
 
 @database_sync_to_async
+def get_info_update(room: Room, kicked: Optional[list] = None) -> dict:
+    """
+    Returns information about room that can be sent to client as update. This info
+    includes room name, room access type, and a list of the room's participants.
+
+    An optional list of kicked users can be passed as an argument. These users will be
+    excluded from the list of participants. This is so that users who are supposed to
+    have been kicked won't show up as participants, even if
+    :py:func:`remove_participant` hasn't been called yet.
+    """
+    room.refresh_from_db()
+    update = {
+        "update": "info",
+        "name": room.name,
+        "access type": room.access_type,
+        "participants": get_participants(room),
+    }
+    if kicked:
+        update["participants"] = [
+            participant
+            for participant in update["participants"]
+            if participant not in kicked
+        ]
+    return update
+
+
 def get_participants(room: Room) -> list[str]:
     """
     Returns list of room participants.
@@ -71,6 +110,38 @@ def get_participants(room: Room) -> list[str]:
     return list(
         room.participants.values_list("username", flat=True).order_by("username")
     )
+
+
+@database_sync_to_async
+def change_room_name(room: Room, name: str):
+    """
+    Changes room name.
+    """
+    room.name = name
+    room.save()
+
+
+@database_sync_to_async
+def change_room_access_type(room: Room, access_type: str) -> list:
+    """
+    Changes room access type. Returns a list of room participants to be kicked as a
+    result of the access type change.
+    """
+    room.access_type = access_type
+    room.save()
+
+    if access_type == "CONFIRMED":
+        guests = room.participants.filter(username__startswith="guest_")
+        return list(guests.values_list("username", flat=True))
+
+    elif access_type == "PRIVATE":
+        participants = list(room.participants.values_list("username", flat=True))
+        invited = list(room.invited_users.values_list("username", flat=True))
+        return [
+            participant for participant in participants if participant not in invited
+        ]
+
+    return []
 
 
 class ChatConsumer(AsyncJsonWebsocketConsumer):
@@ -133,9 +204,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         """
         action = content.get("action")
 
-        if action == "get participants":
-            await self.send_json(await get_participants(self.room))
-        elif action == "send message":
+        if action == "send message":
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -144,6 +213,32 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                     "username": self.username,
                 },
             )
+
+        elif action == "get info":
+            await self.send_json(await get_info_update(self.room))
+
+        elif action == "change room name":
+            new_name = content.get("name")
+            if new_name and new_name.strip():
+                await change_room_name(self.room, content)
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {"type": "chat_room_name_change", "name": new_name},
+                )
+
+        elif action == "change room access type":
+            access_type = content.get("access type")
+            if access_type in ["PUBLIC", "CONFIRMED", "PRIVATE"]:
+                to_kick = await change_room_access_type(self.room, access_type)
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        "type": "chat_access_type_change",
+                        "access type": access_type,
+                        "kick": ", ".join(to_kick),
+                    },
+                )
+
         elif action == "kick user":
             username_to_kick = content.get("username")
             if self.is_owner and username_to_kick:
@@ -151,6 +246,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                     self.room_group_name,
                     {"type": "chat_kick", "username": username_to_kick},
                 )
+
         elif action == "ban user":
             username_to_ban = content.get("username")
             if (
@@ -162,6 +258,19 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                     self.room_group_name,
                     {"type": "chat_ban", "username": username_to_ban},
                 )
+
+    async def chat_info(self, event):
+        """
+        Sends room info to client.
+        """
+        # pylint: disable=unused-argument
+        await self.send_json(await get_info_update(self.room))
+
+    async def chat_room_name_change(self, event):
+        """
+        Notifies client of room name change.
+        """
+        await self.send_json({"update": "name change", "name": event["name"]})
 
     async def chat_message(self, event):
         """
@@ -175,6 +284,32 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                 "username": event["username"],
             }
         )
+
+    async def chat_access_type_change(self, event):
+        """
+        If user is affected by room access change, then user will be kicked. If not,
+        then user will be notified of room access change, the number of users who
+        have been kicked, and the new room information.
+        """
+        to_kick = event["kick"].split(", ")
+        if self.username in to_kick:
+            await self.disconnect(None)
+            await self.send_json(
+                {
+                    "update": "kicked you because access change",
+                    "access type": event["access type"],
+                },
+                True,
+            )
+        else:
+            await self.send_json(
+                {
+                    "update": "users kicked because access change",
+                    "access type": event["access type"],
+                    "quantity": len(to_kick),
+                }
+            )
+            await self.send_json(await get_info_update(self.room, to_kick))
 
     async def chat_kick(self, event):
         """

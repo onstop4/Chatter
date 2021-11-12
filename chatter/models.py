@@ -87,7 +87,7 @@ class RoomManager(models.Manager):
         """
         Attempts to find the specified room and determines if user is allowed to access
         it. Will return tuple containing the Room instance (or None) and a
-        RoomAccessStatus instance.
+        :py:class:`RoomAccessStatus` instance.
         """
         try:
             room = self.prefetch_related("banned_users", "invited_users").get(

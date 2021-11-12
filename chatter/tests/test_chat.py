@@ -427,8 +427,10 @@ class ChatroomActionTests(TransactionTestCase):
             name="Room", number="1234567890", owner=self.owner
         )
         self.room_websocket_url = f"/ws/chat/{self.room.number}/"
+        self.room.invited_users.add(self.owner)
+        self.room.save()
 
-    async def test_get_participants(self):
+    async def test_get_info(self):
         """
         Tests getting room participants.
         """
@@ -443,9 +445,46 @@ class ChatroomActionTests(TransactionTestCase):
         await user_communicator.connect()
         await user_communicator.receive_json_from(TIMEOUT)
 
-        await user_communicator.send_json_to({"action": "get participants"})
-        participants = await user_communicator.receive_json_from(TIMEOUT)
-        self.assertListEqual(["owner", "user"], participants)
+        await user_communicator.send_json_to({"action": "get info"})
+        response = await user_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {
+                "update": "info",
+                "name": "Room",
+                "access type": "PUBLIC",
+                "participants": ["owner", "user"],
+            },
+            response,
+        )
+
+    async def test_change_room_name(self):
+        """
+        Tests changing room name.
+        """
+        # Connect owner as room participant.
+        owner_communicator = WebsocketCommunicator(application, self.room_websocket_url)
+        owner_communicator.scope["user"] = self.owner
+        await owner_communicator.connect()
+        await owner_communicator.receive_json_from(TIMEOUT)
+
+        # Connect normal user as room participant.
+        user_communicator = WebsocketCommunicator(application, self.room_websocket_url)
+        user_communicator.scope["user"] = self.user
+        await user_communicator.connect()
+        await user_communicator.receive_json_from(TIMEOUT)
+
+        # Owner requests that room name is changed.
+        await owner_communicator.send_json_to(
+            {"action": "change room name", "name": "New Name"}
+        )
+
+        # Owner is alerted that room name was changed.
+        response = await owner_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual({"update": "name change", "name": "New Name"}, response)
+
+        # Normal user is alerted that room name was changed.
+        response = await user_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual({"update": "name change", "name": "New Name"}, response)
 
     async def test_send_new_messages(self):
         """
@@ -482,6 +521,168 @@ class ChatroomActionTests(TransactionTestCase):
         response = await owner_communicator.receive_json_from(TIMEOUT)
         self.assertEqual(expected_response, response)
 
+    async def test_change_access_type_to_confirmed(self):
+        """
+        Tests that guest users are kicked (and cannot rejoin) when room access type is
+        changed to CONFIRMED. Also tests that remaining users receive info related to
+        access type change, including the number of users that have been kicked.
+        """
+        # Connect owner as room participant.
+        owner_communicator = WebsocketCommunicator(application, self.room_websocket_url)
+        owner_communicator.scope["user"] = self.owner
+        await owner_communicator.connect()
+        await owner_communicator.receive_json_from(TIMEOUT)
+
+        # Connect normal user as room participant.
+        user_communicator = WebsocketCommunicator(application, self.room_websocket_url)
+        user_communicator.scope["user"] = self.user
+        await user_communicator.connect()
+        await user_communicator.receive_json_from(TIMEOUT)
+
+        # Connect anonymous user as room participant.
+        guest_communicator = WebsocketCommunicator(
+            application, f"{self.room_websocket_url}?guest=test"
+        )
+        await guest_communicator.connect()
+        await guest_communicator.receive_json_from(TIMEOUT)
+
+        # Owner changes room access type to CONFIRMED, kicking out anonymous user.
+        await owner_communicator.send_json_to(
+            {"action": "change room access type", "access type": "CONFIRMED"}
+        )
+
+        # Anonymous user is kicked.
+        response = await guest_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {"update": "kicked you because access change", "access type": "CONFIRMED"},
+            response,
+        )
+
+        # Owner is alerted that users have been kicked and that the room access type
+        # has changed.
+        response = await owner_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {
+                "update": "users kicked because access change",
+                "access type": "CONFIRMED",
+                "quantity": 1,
+            },
+            response,
+        )
+        response = await owner_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {
+                "update": "info",
+                "name": "Room",
+                "access type": "CONFIRMED",
+                "participants": ["owner", "user"],
+            },
+            response,
+        )
+
+        # Normal user is still connected and receives notifications for the change in
+        # room access type.
+        await user_communicator.send_json_to(
+            {"action": "send message", "message": "test"}
+        )
+        response = await user_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {
+                "update": "users kicked because access change",
+                "access type": "CONFIRMED",
+                "quantity": 1,
+            },
+            response,
+        )
+        response = await user_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {
+                "update": "info",
+                "name": "Room",
+                "access type": "CONFIRMED",
+                "participants": ["owner", "user"],
+            },
+            response,
+        )
+        response = await user_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {"update": "new message", "message": "test", "username": "user"}, response
+        )
+
+        # Anonymous user cannot rejoin.
+        guest_communicator2 = WebsocketCommunicator(
+            application, f"{self.room_websocket_url}?guest=test"
+        )
+        connected, code = await guest_communicator2.connect()
+        self.assertFalse(connected)
+        self.assertEqual(4003, code)
+
+    async def test_change_access_type_to_private(self):
+        """
+        Tests that uninvited users are kicked (and cannot rejoin) when room access type
+        is changed to PRIVATE. Also tests that remaining users receive info related to
+        access type change, including the number of users that have been kicked.
+        """
+        # Connect owner as room participant.
+        owner_communicator = WebsocketCommunicator(application, self.room_websocket_url)
+        owner_communicator.scope["user"] = self.owner
+        await owner_communicator.connect()
+        await owner_communicator.receive_json_from(TIMEOUT)
+
+        # Owner changes room access type to CONFIRMED.
+        await owner_communicator.send_json_to(
+            {"action": "change room access type", "access type": "CONFIRMED"}
+        )
+        await owner_communicator.receive_json_from(TIMEOUT)
+        await owner_communicator.receive_json_from(TIMEOUT)
+
+        # Connect normal user as room participant.
+        user_communicator = WebsocketCommunicator(application, self.room_websocket_url)
+        user_communicator.scope["user"] = self.user
+        await user_communicator.connect()
+        await user_communicator.receive_json_from(TIMEOUT)
+
+        # Owner changes room access type to PRIVATE, kicking out normal user.
+        await owner_communicator.send_json_to(
+            {"action": "change room access type", "access type": "PRIVATE"}
+        )
+
+        # Normal user is kicked.
+        response = await user_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {"update": "kicked you because access change", "access type": "PRIVATE"},
+            response,
+        )
+
+        # Owner is alerted that users have been kicked and that the room access type
+        # has changed.
+        response = await owner_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {
+                "update": "users kicked because access change",
+                "access type": "PRIVATE",
+                "quantity": 1,
+            },
+            response,
+        )
+        response = await owner_communicator.receive_json_from(TIMEOUT)
+        self.assertEqual(
+            {
+                "update": "info",
+                "name": "Room",
+                "access type": "PRIVATE",
+                "participants": ["owner"],
+            },
+            response,
+        )
+
+        # Normal user cannot rejoin.
+        user_communicator2 = WebsocketCommunicator(application, self.room_websocket_url)
+        user_communicator2.scope["user"] = self.user
+        connected, code = await user_communicator2.connect()
+        self.assertFalse(connected)
+        self.assertEqual(4004, code)
+
     async def test_kick_user(self):
         """
         Tests that a room participant can be kicked by room owner.
@@ -507,7 +708,7 @@ class ChatroomActionTests(TransactionTestCase):
         response = await user_communicator.receive_json_from(TIMEOUT)
         self.assertEqual({"update": "kicked you"}, response)
 
-        # Owner is alerted that normal user has been kicked.
+        # Owner is alerted that normal user was kicked.
         response = await owner_communicator.receive_json_from(TIMEOUT)
         self.assertEqual(
             {"update": "user kicked", "username": self.user.username}, response
@@ -542,7 +743,7 @@ class ChatroomActionTests(TransactionTestCase):
         response = await guest_communicator.receive_json_from(TIMEOUT)
         self.assertEqual({"update": "kicked you"}, response)
 
-        # Owner is alerted that anonymous user has been kicked.
+        # Owner is alerted that anonymous user was kicked.
         response = await owner_communicator.receive_json_from(TIMEOUT)
         self.assertEqual({"update": "user kicked", "username": "guest_test"}, response)
 
@@ -586,7 +787,7 @@ class ChatroomActionTests(TransactionTestCase):
         response = await user_communicator.receive_json_from(TIMEOUT)
         self.assertEqual({"update": "banned you"}, response)
 
-        # Owner is alerted that normal user has been banned.
+        # Owner is alerted that normal user was banned.
         response = await owner_communicator.receive_json_from(TIMEOUT)
         self.assertEqual(
             {"update": "user banned", "username": self.user.username}, response
@@ -612,6 +813,11 @@ class ChatroomActionTests(TransactionTestCase):
         )
 
         # Anonymous user is still connected.
-        await guest_communicator.send_json_to({"action": "get participants"})
+        await guest_communicator.send_json_to(
+            {"action": "send message", "message": "test"}
+        )
         response = await guest_communicator.receive_json_from(TIMEOUT)
-        self.assertListEqual(["guest_test", "owner"], response)
+        self.assertEqual(
+            {"update": "new message", "message": "test", "username": "guest_test"},
+            response,
+        )
