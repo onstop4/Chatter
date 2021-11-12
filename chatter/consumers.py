@@ -80,7 +80,8 @@ def ban_user(room: Room, user: User):
 def get_info_update(room: Room, kicked: Optional[list] = None) -> dict:
     """
     Returns information about room that can be sent to client as update. This info
-    includes room name, room access type, and a list of the room's participants.
+    includes room name, room access type, room owner, and a list of the room's
+    participants.
 
     An optional list of kicked users can be passed as an argument. These users will be
     excluded from the list of participants. This is so that users who are supposed to
@@ -92,6 +93,7 @@ def get_info_update(room: Room, kicked: Optional[list] = None) -> dict:
         "update": "info",
         "name": room.name,
         "access type": room.access_type,
+        "owner": room.owner.username,
         "participants": get_participants(room),
     }
     if kicked:
