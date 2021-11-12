@@ -211,7 +211,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                 self.room_group_name,
                 {
                     "type": "chat_message",
-                    "message": content.get("message", ""),
+                    "message": str(content.get("message", "")),
                     "username": self.username,
                 },
             )
@@ -220,8 +220,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             await self.send_json(await get_info_update(self.room))
 
         elif action == "change room name":
-            new_name = content.get("name")
-            if new_name and new_name.strip():
+            if (new_name := str(content.get("name", ""))) and new_name.strip():
                 await change_room_name(self.room, content)
                 await self.channel_layer.group_send(
                     self.room_group_name,
@@ -229,8 +228,11 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                 )
 
         elif action == "change room access type":
-            access_type = content.get("access type")
-            if access_type in ["PUBLIC", "CONFIRMED", "PRIVATE"]:
+            if (access_type := content.get("access type")) in [
+                "PUBLIC",
+                "CONFIRMED",
+                "PRIVATE",
+            ]:
                 to_kick = await change_room_access_type(self.room, access_type)
                 await self.channel_layer.group_send(
                     self.room_group_name,
@@ -242,18 +244,16 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                 )
 
         elif action == "kick user":
-            username_to_kick = content.get("username")
-            if self.is_owner and username_to_kick:
+            if self.is_owner and (username_to_kick := str(content.get("username"))):
                 await self.channel_layer.group_send(
                     self.room_group_name,
                     {"type": "chat_kick", "username": username_to_kick},
                 )
 
         elif action == "ban user":
-            username_to_ban = content.get("username")
             if (
                 self.is_owner
-                and username_to_ban
+                and (username_to_ban := str(content.get("username")))
                 and not username_to_ban.startswith("guest_")
             ):
                 await self.channel_layer.group_send(

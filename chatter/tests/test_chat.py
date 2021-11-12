@@ -153,15 +153,13 @@ class ChatroomConnectionTests(TransactionTestCase):
         communicator.scope["user"] = self.allowed_user
 
         connected, code = await communicator.connect()
-        self.assertFalse(connected)
-        self.assertEqual(4001, code)
+        self.assertEqual((False, 4001), (connected, code))
 
         # Connect as anonymous user.
         communicator2 = WebsocketCommunicator(application, "/ws/chat/54321/")
 
         connected, code = await communicator2.connect()
-        self.assertFalse(connected)
-        self.assertEqual(4001, code)
+        self.assertEqual((False, 4001), (connected, code))
 
     async def test_join_bad_username(self):
         """
@@ -174,8 +172,7 @@ class ChatroomConnectionTests(TransactionTestCase):
         )
 
         connected, code = await communicator.connect()
-        self.assertFalse(connected)
-        self.assertEqual(4002, code)
+        self.assertEqual((False, 4002), (connected, code))
 
         # Username specified is blank.
         communicator2 = WebsocketCommunicator(
@@ -183,8 +180,7 @@ class ChatroomConnectionTests(TransactionTestCase):
         )
 
         connected, code = await communicator2.connect()
-        self.assertFalse(connected)
-        self.assertEqual(4002, code)
+        self.assertEqual((False, 4002), (connected, code))
 
         # Username specified includes space character.
         communicator3 = WebsocketCommunicator(
@@ -192,8 +188,7 @@ class ChatroomConnectionTests(TransactionTestCase):
         )
 
         connected, code = await communicator3.connect()
-        self.assertFalse(connected)
-        self.assertEqual(4002, code)
+        self.assertEqual((False, 4002), (connected, code))
 
         # No username is specified.
         communicator4 = WebsocketCommunicator(
@@ -201,8 +196,7 @@ class ChatroomConnectionTests(TransactionTestCase):
         )
 
         connected, code = await communicator4.connect()
-        self.assertFalse(connected)
-        self.assertEqual(4002, code)
+        self.assertEqual((False, 4002), (connected, code))
 
     async def test_join_confirm_required(self):
         """
@@ -214,8 +208,7 @@ class ChatroomConnectionTests(TransactionTestCase):
         )
 
         connected, code = await communicator.connect()
-        self.assertFalse(connected)
-        self.assertEqual(4003, code)
+        self.assertEqual((False, 4003), (connected, code))
 
     async def test_join_not_invited(self):
         """
@@ -231,8 +224,7 @@ class ChatroomConnectionTests(TransactionTestCase):
         communicator.scope["user"] = self.bad_user
 
         connected, code = await communicator.connect()
-        self.assertFalse(connected)
-        self.assertEqual(4004, code)
+        self.assertEqual((False, 4004), (connected, code))
 
         # Connect as anonymous user.
         communicator2 = WebsocketCommunicator(
@@ -240,8 +232,7 @@ class ChatroomConnectionTests(TransactionTestCase):
         )
 
         connected, code = await communicator2.connect()
-        self.assertFalse(connected)
-        self.assertEqual(4004, code)
+        self.assertEqual((False, 4004), (connected, code))
 
     async def test_join_banned(self):
         """
@@ -255,8 +246,7 @@ class ChatroomConnectionTests(TransactionTestCase):
         communicator.scope["user"] = self.bad_user
 
         connected, code = await communicator.connect()
-        self.assertFalse(connected)
-        self.assertEqual(4005, code)
+        self.assertEqual((False, 4005), (connected, code))
 
         # Attempting to join confirmed room.
         communicator2 = WebsocketCommunicator(
@@ -265,8 +255,7 @@ class ChatroomConnectionTests(TransactionTestCase):
         communicator2.scope["user"] = self.bad_user
 
         connected, code = await communicator2.connect()
-        self.assertFalse(connected)
-        self.assertEqual(4005, code)
+        self.assertEqual((False, 4005), (connected, code))
 
     async def test_join_already_in_room(self):
         """
@@ -299,8 +288,7 @@ class ChatroomConnectionTests(TransactionTestCase):
         communicator2.scope["user"] = self.allowed_user
 
         connected, code = await communicator2.connect()
-        self.assertFalse(connected)
-        self.assertEqual(4006, code)
+        self.assertEqual((False, 4006), (connected, code))
 
         # Connect as anonymous user.
         communicator3 = WebsocketCommunicator(
@@ -325,8 +313,7 @@ class ChatroomConnectionTests(TransactionTestCase):
         )
 
         connected, code = await communicator4.connect()
-        self.assertFalse(connected)
-        self.assertEqual(4006, code)
+        self.assertEqual((False, 4006), (connected, code))
 
     async def test_rejoin_after_disconnect(self):
         """
@@ -617,8 +604,7 @@ class ChatroomActionTests(TransactionTestCase):
             application, f"{self.room_websocket_url}?guest=test"
         )
         connected, code = await guest_communicator2.connect()
-        self.assertFalse(connected)
-        self.assertEqual(4003, code)
+        self.assertEqual((False, 4003), (connected, code))
 
     async def test_change_access_type_to_private(self):
         """
@@ -684,8 +670,7 @@ class ChatroomActionTests(TransactionTestCase):
         user_communicator2 = WebsocketCommunicator(application, self.room_websocket_url)
         user_communicator2.scope["user"] = self.user
         connected, code = await user_communicator2.connect()
-        self.assertFalse(connected)
-        self.assertEqual(4004, code)
+        self.assertEqual((False, 4004), (connected, code))
 
     async def test_kick_user(self):
         """
@@ -801,8 +786,7 @@ class ChatroomActionTests(TransactionTestCase):
         user_communicator2 = WebsocketCommunicator(application, self.room_websocket_url)
         user_communicator2.scope["user"] = self.user
         connected, code = await user_communicator2.connect()
-        self.assertFalse(connected)
-        self.assertEqual(4005, code)
+        self.assertEqual((False, 4005), (connected, code))
 
         # Connect anonymous user as room participant.
         guest_communicator = WebsocketCommunicator(
